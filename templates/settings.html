@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Tunnel Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Settings</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <h3>Change Password</h3>
+        <form method="post" action="{{ url_for('settings') }}">
+            <div class="mb-3">
+                <label for="current_password" class="form-label">Current Password:</label>
+                <input type="password" id="current_password" name="current_password" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label for="new_password" class="form-label">New Password:</label>
+                <input type="password" id="new_password" name="new_password" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label for="confirm_password" class="form-label">Confirm New Password:</label>
+                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Change Password</button>
+        </form>
+    </div>
+    <div class="col-md-6">
+        <h3>Domain & SSL Configuration</h3>
+        <p>Set the domain name for this panel. This is required for enabling SSL.</p>
+        <form id="domain_form">
+            <div class="mb-3">
+                <label for="domain_name_input" class="form-label">Domain Name:</label>
+                <input type="text" id="domain_name_input" name="domain_name" class="form-control" placeholder="e.g., your.domain.com" value="{{ domain_name or '' }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Save Domain</button>
+        </form>
+
+        <div id="ssl_status_section" style="display: none; margin-top: 20px;">
+            <h4>SSL Status</h4>
+            <p>Domain: <strong id="domain_display"></strong></p>
+            <p>Status: <strong id="ssl_status"></strong></p>
+            <button id="generate_ssl_btn" class="btn btn-success" style="display: none;">Generate Certificate</button>
+            <button id="restart_btn" class="btn btn-warning" style="display: none;">Restart Program</button>
+
+            <div id="ssl_logs_container" style="display: none; margin-top: 10px;">
+                <h4>Process Logs:</h4>
+                <textarea id="ssl_logs" rows="10" class="form-control" readonly></textarea>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const domainForm = document.getElementById('domain_form');
+    const domainInput = document.getElementById('domain_name_input');
+    const sslStatusSection = document.getElementById('ssl_status_section');
+    const domainDisplay = document.getElementById('domain_display');
+    const sslStatusDisplay = document.getElementById('ssl_status');
+    const generateBtn = document.getElementById('generate_ssl_btn');
+    const restartBtn = document.getElementById('restart_btn');
+    const logsContainer = document.getElementById('ssl_logs_container');
+    const logsTextarea = document.getElementById('ssl_logs');
+
+    function checkSslStatus(domain) {
+        if (!domain) {
+            sslStatusSection.style.display = 'none';
+            return;
+        }
+        fetch(`/ssl_status?domain=${domain}`)
+            .then(response => response.json())
+            .then(data => {
+                domainDisplay.textContent = domain;
+                sslStatusDisplay.textContent = data.status;
+                sslStatusSection.style.display = 'block';
+                if (data.status === 'Not Found') {
+                    generateBtn.style.display = 'inline-block';
+                    restartBtn.style.display = 'none';
+                } else {
+                    generateBtn.style.display = 'none';
+                    restartBtn.style.display = 'inline-block';
+                }
+            });
+    }
+
+    domainForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const domain = domainInput.value;
+        fetch("{{ url_for('settings') }}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `domain_name=${encodeURIComponent(domain)}`
+        }).then(() => {
+            checkSslStatus(domain);
+        });
+    });
+
+    generateBtn.addEventListener('click', function() {
+        logsContainer.style.display = 'block';
+        logsTextarea.value = 'Generating certificate...';
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+        fetch("{{ url_for('generate_ssl') }}", {
+            method: 'POST',
+        }).then(response => response.json())
+          .then(data => {
+              logsTextarea.value = data.logs;
+              checkSslStatus(domainInput.value);
+              generateBtn.disabled = false;
+              generateBtn.textContent = 'Generate Certificate';
+              if (data.success) {
+                  restartBtn.style.display = 'inline-block';
+              }
+          });
+    });
+
+    restartBtn.addEventListener('click', function() {
+        const domain = domainInput.value;
+        fetch("{{ url_for('restart_program') }}", {
+            method: 'POST',
+        }).then(() => {
+            // Give the server a moment to restart
+            setTimeout(() => {
+                window.location.href = `https://_domain_:5001`.replace('_domain_', domain);
+            }, 2000);
+        });
+    });
+
+    // Initial check
+    checkSslStatus(domainInput.value);
+});
+</script>
+{% endblock %}

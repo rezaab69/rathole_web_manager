@@ -1,0 +1,5 @@
+Flask>=2.0
+bcrypt>=3.2 # For password hashing later
+psutil>=5.8 # For managing processes later (e.g. rathole tunnels)
+toml>=0.10 # For parsing and generating rathole TOML configuration files
+Flask-Limiter>=2.0 # For rate limiting login attempts
