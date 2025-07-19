@@ -308,9 +308,7 @@ def stream_updates():
                         service['traffic']['sent_hr'] = human_readable_bytes(service_traffic_data.get('sent', 0))
                         service['traffic']['recv_hr'] = human_readable_bytes(service_traffic_data.get('recv', 0))
 
-            yield f"data: {json.dumps(data)}
-
-"
+            yield f"data: {json.dumps(data)}"
             time.sleep(2) # Update every 2 seconds
 
     return Response(generate(), mimetype='text/event-stream')
