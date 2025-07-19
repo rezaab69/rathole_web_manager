@@ -1,8 +1,0 @@
-[server]
-default_token = "RezaAb"
-bind_addr = "0.0.0.0:8001"
-
-[server.services]
-
-[server.transport]
-type = "tls"
