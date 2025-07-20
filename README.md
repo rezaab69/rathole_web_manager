@@ -39,7 +39,7 @@ First, clone this repository to your server.
 
 ```bash
 git clone https://github.com/rezaab69/rathole_web_manager.git
-cd rathole_management
+cd rathole_web_manager
 ```
 
 ### 2. Run the Installation Script
