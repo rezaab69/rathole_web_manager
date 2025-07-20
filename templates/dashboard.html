@@ -3,6 +3,18 @@
 {% block title %}Dashboard - Tunnel Manager{% endblock %}
 
 {% block content %}
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+    <div id="copyToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">Notification</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toast-body-content">
+            <!-- Message will be inserted here -->
+        </div>
+    </div>
+</div>
+
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Dashboard</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
@@ -28,13 +40,26 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <p class="card-text">
-                        <strong>Address:</strong> {{ server.addr }}
+                        <strong>Address:</strong> <code>{{ server.addr }}</code>
                     </p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" role="switch" id="autoRestartSwitch-server-{{ name }}" onchange="location.href='{{ url_for('toggle_auto_restart', instance_type='server', instance_name=name) }}'" {% if server.auto_restart %}checked{% endif %}>
                         <label class="form-check-label" for="autoRestartSwitch-server-{{ name }}">Auto-Restart</label>
                     </div>
                 </div>
+                <p class="mb-1"><strong>Status:</strong> <span class="badge bg-{{ 'success' if server.status == 'active' else ('secondary' if server.status == 'stopped' else 'warning') }}">{{ server.status }}</span></p>
+                <p class="mb-1"><strong>Transport:</strong> <span class="badge bg-info">{{ server.transport_protocol.upper() }}</span></p>
+                <p class="mb-1"><strong>Auto-Restart:</strong> {{ 'Enabled' if server.auto_restart else 'Disabled' }} <a href="{{ url_for('toggle_auto_restart', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></a></p>
+
+                {% if server.transport_protocol == 'noise' %}
+                <p class="mb-1"><strong>Noise Public Key:</strong> <code class="key-code">{{ server.public_key }}</code> <button class="btn btn-sm btn-outline-secondary btn-copy" onclick="copyToClipboard('{{ server.public_key }}')"><i class="bi bi-clipboard"></i></button></p>
+                {% elif server.transport_protocol == 'tls' %}
+                <p class="mb-1"><strong>PKCS#12 Path:</strong> <code>{{ server.tls_pkcs12 }}</code></p>
+                <p class="mb-1"><strong>PKCS#12 Password:</strong> <code class="key-code">{{ server.tls_pkcs12_password }}</code> <button class="btn btn-sm btn-outline-secondary btn-copy" onclick="copyToClipboard('{{ server.tls_pkcs12_password }}')"><i class="bi bi-clipboard"></i></button></p>
+                <button class="btn btn-sm btn-info me-2" data-bs-toggle="modal" data-bs-target="#viewCertModal-server-{{ name }}">View & Copy Certificate</button>
+                <a href="{{ url_for('regenerate_cert', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-warning me-2" onclick="return confirm('Are you sure you want to regenerate the TLS certificate for {{ name }}?');">Regenerate Certificate</a>
+                {% endif %}
+
                 <h5>Services</h5>
                 <ul class="list-group list-group-flush">
                     {% for t_name, tunnel in tunnels.items() if tunnel['parent_instance'] == name and tunnel['service_type'] == 'server_service' %}
@@ -44,23 +69,13 @@
                     </li>
                     {% endfor %}
                 </ul>
-                {% if server.transport_protocol == 'noise' %}
-                <div class="mt-3">
-                    <strong>Public Key:</strong> <code>{{ server.public_key }}</code>
-                    <a href="{{ url_for('regenerate_key', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-warning"><i class="fas fa-sync-alt"></i> Regenerate</a>
-                </div>
-                {% elif server.transport_protocol == 'tls' %}
-                <div class="mt-3">
-                    <a href="{{ url_for('regenerate_cert', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-warning"><i class="fas fa-sync-alt"></i> Regenerate Certificate</a>
-                </div>
-                {% endif %}
             </div>
             <div class="card-footer text-muted d-flex justify-content-between">
                 <div>
                     {% if server.status == 'stopped' %}
-                    <a href="{{ url_for('start_instance', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-success"><i class="fas fa-play"></i> Start</a>
+                    <button id="action-button-server-{{ name }}" onclick="performInstanceAction('server', '{{ name }}', 'start')" class="btn btn-sm btn-success"><i class="fas fa-play"></i> Start</button>
                     {% else %}
-                    <a href="{{ url_for('stop_instance', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-warning"><i class="fas fa-stop"></i> Stop</a>
+                    <button id="action-button-server-{{ name }}" onclick="performInstanceAction('server', '{{ name }}', 'stop')" class="btn btn-sm btn-warning"><i class="fas fa-stop"></i> Stop</button>
                     {% endif %}
                     <a href="{{ url_for('remove_instance', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?');"><i class="fas fa-trash-alt"></i> Remove</a>
                     <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#editInstanceModal-server-{{ name }}"><i class="fas fa-edit"></i> Edit</button>
@@ -87,13 +102,23 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <p class="card-text">
-                        <strong>Address:</strong> {{ client.addr }}
+                        <strong>Address:</strong> <code>{{ client.addr }}</code>
                     </p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" role="switch" id="autoRestartSwitch-client-{{ name }}" onchange="location.href='{{ url_for('toggle_auto_restart', instance_type='client', instance_name=name) }}'" {% if client.auto_restart %}checked{% endif %}>
                         <label class="form-check-label" for="autoRestartSwitch-client-{{ name }}">Auto-Restart</label>
                     </div>
                 </div>
+                <p class="mb-1"><strong>Status:</strong> <span class="badge bg-{{ 'success' if client.status == 'active' else ('secondary' if client.status == 'stopped' else 'warning') }}">{{ client.status }}</span></p>
+                <p class="mb-1"><strong>Transport:</strong> <span class="badge bg-info">{{ client.transport_protocol.upper() }}</span></p>
+                <p class="mb-1"><strong>Auto-Restart:</strong> {{ 'Enabled' if client.auto_restart else 'Disabled' }} <a href="{{ url_for('toggle_auto_restart', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></a></p>
+
+                {% if client.transport_protocol == 'noise' %}
+                <p class="mb-1"><strong>Noise Public Key:</strong> <code class="key-code">{{ client.public_key }}</code> <button class="btn btn-sm btn-outline-secondary btn-copy" onclick="copyToClipboard('{{ client.public_key }}')"><i class="bi bi-clipboard"></i></button></p>
+                {% elif client.transport_protocol == 'tls' %}
+                <!-- Client TLS info is intentionally kept minimal on the dashboard -->
+                {% endif %}
+
                 <h5>Services</h5>
                 <ul class="list-group list-group-flush">
                     {% for t_name, tunnel in tunnels.items() if tunnel['parent_instance'] == name and tunnel['service_type'] == 'client_service' %}
@@ -103,23 +128,13 @@
                     </li>
                     {% endfor %}
                 </ul>
-                {% if client.transport_protocol == 'noise' %}
-                <div class="mt-3">
-                    <strong>Public Key:</strong> <code>{{ client.public_key }}</code>
-                    <a href="{{ url_for('regenerate_key', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-warning"><i class="fas fa-sync-alt"></i> Regenerate</a>
-                </div>
-                {% elif client.transport_protocol == 'tls' %}
-                <div class="mt-3">
-                    <a href="{{ url_for('regenerate_cert', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-warning"><i class="fas fa-sync-alt"></i> Regenerate Certificate</a>
-                </div>
-                {% endif %}
             </div>
             <div class="card-footer text-muted d-flex justify-content-between">
                 <div>
                     {% if client.status == 'stopped' %}
-                    <a href="{{ url_for('start_instance', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-success"><i class="fas fa-play"></i> Start</a>
+                    <button id="action-button-client-{{ name }}" onclick="performInstanceAction('client', '{{ name }}', 'start')" class="btn btn-sm btn-success"><i class="fas fa-play"></i> Start</button>
                     {% else %}
-                    <a href="{{ url_for('stop_instance', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-warning"><i class="fas fa-stop"></i> Stop</a>
+                    <button id="action-button-client-{{ name }}" onclick="performInstanceAction('client', '{{ name }}', 'stop')" class="btn btn-sm btn-warning"><i class="fas fa-stop"></i> Stop</button>
                     {% endif %}
                     <a href="{{ url_for('remove_instance', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?');"><i class="fas fa-trash-alt"></i> Remove</a>
                     <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#editInstanceModal-client-{{ name }}"><i class="fas fa-edit"></i> Edit</button>
@@ -132,7 +147,6 @@
     <p>No client instances configured.</p>
     {% endfor %}
 </div>
-
 
 <!-- Ports Traffic -->
 <h2 class="mt-4">Ports Traffic</h2>
@@ -199,7 +213,6 @@
     </div>
 </div>
 
-
 <!-- Modals -->
 <!-- Add Server Modal -->
 <div class="modal fade" id="addServerModal" tabindex="-1" aria-labelledby="addServerModalLabel" aria-hidden="true">
@@ -217,11 +230,20 @@
                     <div class="mb-3"><label class="form-label">Default Token (optional):</label><input type="text" class="form-control" name="token" placeholder="Default: RezaAb"></div>
                     <div class="mb-3">
                         <label class="form-label">Transport Protocol:</label>
-                        <select class="form-select" name="transport_protocol">
+                        <select class="form-select" id="add-transport-protocol-server" name="transport_protocol" onchange="toggleTransportFields('server', 'add')">
                             <option value="tcp" selected>TCP</option>
-                            <option value="tls">TLS</option>
                             <option value="noise">Noise</option>
+                            <option value="tls">TLS</option>
                         </select>
+                    </div>
+                    <div id="add-server-noise-fields" class="row g-3 mb-3" style="display: none;">
+                        <!-- Noise fields for server will be minimal as keys are generated server-side -->
+                    </div>
+                    <div id="add-server-tls-fields" class="row g-3 mb-3" style="display: none;">
+                        <div class="col-md-6">
+                            <label for="add-tls-pkcs12-password-server" class="form-label">PKCS#12 Password (Optional)</label>
+                            <input type="password" class="form-control" id="add-tls-pkcs12-password-server" name="tls_pkcs12_password" placeholder="Leave blank to auto-generate">
+                        </div>
                     </div>
                     <div class="form-check"><input type="checkbox" class="form-check-input" name="auto_restart" checked> <label class="form-check-label">Auto-Restart on Failure</label></div>
                 </div>
@@ -251,14 +273,28 @@
                     <div class="mb-3"><label class="form-label">Default Token (optional):</label><input type="text" class="form-control" name="token" placeholder="Default: RezaAb"></div>
                     <div class="mb-3">
                         <label class="form-label">Transport Protocol:</label>
-                        <select class="form-select" name="transport_protocol">
+                        <select class="form-select" id="add-transport-protocol-client" name="transport_protocol" onchange="toggleTransportFields('client', 'add')">
                             <option value="tcp" selected>TCP</option>
-                            <option value="tls">TLS</option>
                             <option value="noise">Noise</option>
+                            <option value="tls">TLS</option>
                         </select>
                     </div>
-                    <div class="mb-3"><label class="form-label">Remote Public Key (for Noise protocol):</label><input type="text" class="form-control" name="remote_public_key"></div>
-                    <div class="form-check"><input type="checkbox" class="form-check-input" name="auto_restart" checked> <label class="form-check-label">Auto-Restart on Failure</label></div>
+                    <div id="add-client-noise-fields" class="row g-3 mb-3" style="display: none;">
+                        <div class="col-md-12">
+                            <label for="add-remote-public-key-client" class="form-label">Remote (Server) Public Key</label>
+                            <input type="text" class="form-control" id="add-remote-public-key-client" name="remote_public_key" placeholder="Enter server's public key">
+                        </div>
+                    </div>
+                    <div id="add-client-tls-fields" class="row g-3 mb-3" style="display: none;">
+                        <div class="col-md-12">
+                            <label for="add-tls-trusted-root-content-client" class="form-label">Trusted Root Certificate Content</label>
+                            <textarea class="form-control" id="add-tls-trusted-root-content-client" name="tls_trusted_root_content" rows="3" placeholder="Paste the server's root CA certificate here"></textarea>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="autoRestartClient" name="auto_restart" checked>
+                        <label class="form-check-label" for="autoRestartClient">Auto-restart on system boot</label>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -285,11 +321,20 @@
                     <div class="mb-3"><label class="form-label">Listen Port:</label><input type="text" class="form-control" name="port" value="{{ server.addr.split(':')[-1] }}" required></div>
                     <div class="mb-3">
                         <label class="form-label">Transport Protocol:</label>
-                        <select class="form-select" name="transport_protocol">
+                        <select class="form-select" id="edit-transport-protocol-server" name="transport_protocol" onchange="toggleTransportFields('server', 'edit')">
                             <option value="tcp" {% if server.transport_protocol == 'tcp' %}selected{% endif %}>TCP</option>
-                            <option value="tls" {% if server.transport_protocol == 'tls' %}selected{% endif %}>TLS</option>
                             <option value="noise" {% if server.transport_protocol == 'noise' %}selected{% endif %}>Noise</option>
+                            <option value="tls" {% if server.transport_protocol == 'tls' %}selected{% endif %}>TLS</option>
                         </select>
+                    </div>
+                    <div id="edit-server-noise-fields" class="row g-3 mb-3" style="display: none;">
+                        <!-- Server noise fields are managed automatically -->
+                    </div>
+                    <div id="edit-server-tls-fields" class="row g-3 mb-3" style="display: none;">
+                        <div class="col-md-6">
+                            <label for="edit-tls-pkcs12-password-server" class="form-label">New PKCS#12 Password</label>
+                            <input type="password" class="form-control" id="edit-tls-pkcs12-password-server" name="tls_pkcs12_password" placeholder="Leave blank to keep existing">
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -318,13 +363,24 @@
                     <div class="mb-3"><label class="form-label">Remote Port:</label><input type="text" class="form-control" name="port" value="{{ client.addr.split(':')[-1] }}" required></div>
                     <div class="mb-3">
                         <label class="form-label">Transport Protocol:</label>
-                        <select class="form-select" name="transport_protocol">
+                        <select class="form-select" id="edit-transport-protocol-client" name="transport_protocol" onchange="toggleTransportFields('client', 'edit')">
                             <option value="tcp" {% if client.transport_protocol == 'tcp' %}selected{% endif %}>TCP</option>
-                            <option value="tls" {% if client.transport_protocol == 'tls' %}selected{% endif %}>TLS</option>
                             <option value="noise" {% if client.transport_protocol == 'noise' %}selected{% endif %}>Noise</option>
+                            <option value="tls" {% if client.transport_protocol == 'tls' %}selected{% endif %}>TLS</option>
                         </select>
                     </div>
-                    <div class="mb-3"><label class="form-label">Remote Public Key (for Noise protocol):</label><input type="text" class="form-control" name="remote_public_key" value="{{ client.public_key }}"></div>
+                    <div id="edit-client-noise-fields" class="row g-3 mb-3" style="display: none;">
+                        <div class="col-md-12">
+                            <label for="edit-remote-public-key-client" class="form-label">Remote (Server) Public Key</label>
+                            <input type="text" class="form-control" id="edit-remote-public-key-client" name="remote_public_key">
+                        </div>
+                    </div>
+                    <div id="edit-client-tls-fields" class="row g-3 mb-3" style="display: none;">
+                        <div class="col-md-12">
+                            <label for="edit-tls-trusted-root-content-client" class="form-label">Trusted Root Certificate Content</label>
+                            <textarea class="form-control" id="edit-tls-trusted-root-content-client" name="tls_trusted_root_content" rows="3" placeholder="Paste the new server's root CA certificate here. Leave blank to keep existing."></textarea>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -400,48 +456,174 @@
 </div>
 {% endfor %}
 
+<!-- View Certificate Modals -->
+{% for name, server in servers.items() %}
+{% if server.transport_protocol == 'tls' and server.tls_cert_content %}
+<div class="modal fade" id="viewCertModal-server-{{ name }}" tabindex="-1" aria-labelledby="viewCertModalLabel-server-{{ name }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewCertModalLabel-server-{{ name }}">Certificate for {{ name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>This is the public certificate content for the server instance. Clients will need this to establish a trusted TLS connection.</p>
+                <textarea class="form-control" id="cert-content-{{ name }}" rows="10" readonly>{{ server.tls_cert_content }}</textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="copyToClipboard(document.getElementById('cert-content-{{ name }}').value, 'Certificate')">Copy Certificate</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const eventSource = new EventSource("{{ url_for('stream') }}");
+    function updateDashboardData() {
+        fetch('/api/status')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                updateInstances(data.servers, 'server');
+                updateInstances(data.clients, 'client');
+                updateTraffic(data.servers, 'server');
+                updateTraffic(data.clients, 'client');
+            })
+            .catch(error => console.error('Error fetching status:', error));
+    }
 
-    eventSource.onmessage = function(event) {
-        const data = JSON.parse(event.data);
+    function updateInstances(instances, instanceType) {
+        if (!instances) return;
+        for (const [name, instance] of Object.entries(instances)) {
+            const statusBadge = document.getElementById(`${instanceType}-${name}-status`);
+            if (statusBadge) {
+                const statusText = instance.status.charAt(0).toUpperCase() + instance.status.slice(1);
+                if (statusBadge.textContent !== statusText) {
+                    statusBadge.textContent = statusText;
+                }
 
-        // Update server instances
-        updateInstances(data.servers, 'server');
-        // Update client instances
-        updateInstances(data.clients, 'client');
-        // Update port traffic
-        updatePortTraffic(data.servers, 'server');
-        updatePortTraffic(data.clients, 'client');
-    };
+                let newClass = 'badge ';
+                if (instance.status === 'active') newClass += 'bg-success';
+                else if (instance.status === 'running') newClass += 'bg-warning';
+                else newClass += 'bg-danger';
 
-    function updateInstances(instancesData, instanceType) {
-        for (const name in instancesData) {
-            if (instancesData.hasOwnProperty(name)) {
-                const instance = instancesData[name];
-                const statusBadge = document.querySelector(`#${instanceType}-${name}-status`);
-                if (statusBadge) {
-                    statusBadge.className = `badge bg-${instance.status === 'active' ? 'success' : instance.status === 'running' ? 'warning' : 'danger'}`;
-                    statusBadge.textContent = instance.status.charAt(0).toUpperCase() + instance.status.slice(1);
+                if (statusBadge.className !== newClass) {
+                    statusBadge.className = newClass;
+                }
+            }
+
+            const actionButton = document.getElementById(`action-button-${instanceType}-${name}`);
+            if (actionButton) {
+                const isStopped = instance.status === 'stopped';
+                const currentAction = actionButton.getAttribute('onclick').includes('start') ? 'start' : 'stop';
+                const newAction = isStopped ? 'start' : 'stop';
+
+                if (currentAction !== newAction) {
+                    const newButton = document.createElement('button');
+                    newButton.id = `action-button-${instanceType}-${name}`;
+                    newButton.className = `btn btn-sm ${isStopped ? 'btn-success' : 'btn-warning'}`;
+                    newButton.innerHTML = `<i class="fas ${isStopped ? 'fa-play' : 'fa-stop'}"></i> ${isStopped ? 'Start' : 'Stop'}`;
+                    newButton.onclick = () => performInstanceAction(instanceType, name, newAction);
+                    newButton.setAttribute('onclick', `performInstanceAction('${instanceType}', '${name}', '${newAction}')`);
+                    actionButton.parentNode.replaceChild(newButton, actionButton);
                 }
             }
         }
     }
 
-    function updatePortTraffic(instancesData, instanceType) {
-        for (const instanceName in instancesData) {
-            const instance = instancesData[instanceName];
-            for (const serviceName in instance.services) {
-                const trafficData = instance.services[serviceName].traffic;
-                const trafficCellId = instanceType + '-' + serviceName + '-traffic';
-                const trafficCell = document.getElementById(trafficCellId);
-                if (trafficCell) {
-                    trafficCell.innerHTML = `&#8593; ${trafficData.sent_hr} <br> &#8595; ${trafficData.recv_hr}`;
+    function updateTraffic(instances, instanceType) {
+        if (!instances) return;
+        for (const [instanceName, instanceData] of Object.entries(instances)) {
+            if (instanceData.services) {
+                for (const [serviceName, serviceData] of Object.entries(instanceData.services)) {
+                    const trafficCell = document.getElementById(`${instanceType}-${serviceName}-traffic`);
+                    if (trafficCell && serviceData.traffic) {
+                        const newHTML = `&#8593; ${serviceData.traffic.sent_hr} <br> &#8595; ${serviceData.traffic.recv_hr}`;
+                        if (trafficCell.innerHTML !== newHTML) {
+                            trafficCell.innerHTML = newHTML;
+                        }
+                    }
                 }
             }
         }
     }
-});
+
+    function performInstanceAction(instanceType, instanceName, action) {
+        const url = `/api/instance/${action}`;
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                instance_type: instanceType, 
+                instance_name: instanceName 
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast(data.message);
+                updateDashboardData(); // Immediately update data
+            } else {
+                showToast('Error: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('An unexpected error occurred.', 'error');
+        });
+    }
+
+    function copyToClipboard(text, type = 'Key') {
+        navigator.clipboard.writeText(text).then(function() {
+            const toastEl = document.getElementById('copyToast');
+            const toastBody = document.getElementById('toast-body-content');
+            toastBody.textContent = `${type} copied to clipboard!`;
+            const toast = new bootstrap.Toast(toastEl);
+            toast.show();
+        }, function(err) {
+            console.error('Async: Could not copy text: ', err);
+        });
+    }
+
+    function showToast(message, level = 'success') {
+        const toastEl = document.getElementById('copyToast');
+        const toastBody = document.getElementById('toast-body-content');
+        toastBody.textContent = message;
+        
+        // Optional: change toast color based on level
+        const toastHeader = toastEl.querySelector('.toast-header');
+        if (level === 'error') {
+            toastHeader.classList.add('bg-danger', 'text-white');
+        } else {
+            toastHeader.classList.remove('bg-danger', 'text-white');
+        }
+
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+    }
+
+    function toggleTransportFields(instanceType, formType) {
+        const protocol = document.getElementById(`${formType}-transport-protocol-${instanceType}`).value;
+        const noiseFields = document.getElementById(`${formType}-${instanceType}-noise-fields`);
+        const tlsFields = document.getElementById(`${formType}-${instanceType}-tls-fields`);
+
+        if (noiseFields) noiseFields.style.display = (protocol === 'noise') ? 'flex' : 'none';
+        if (tlsFields) tlsFields.style.display = (protocol === 'tls') ? 'flex' : 'none';
+    }
+
+    // Initial load and periodic refresh
+    document.addEventListener('DOMContentLoaded', function() {
+        updateDashboardData(); // Initial fetch
+        setInterval(updateDashboardData, 5000); // Refresh every 5 seconds
+    });
 </script>
+
 {% endblock %}

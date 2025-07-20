@@ -51,6 +51,12 @@ def _get_process_by_key(process_key):
             continue
     return None
 
+# More specific keywords based on rathole log format
+# Success is determined by a forwarder being established for a service.
+SUCCESS_KEYWORDS = ["forwarder for service established", "control channel connected"]
+# Errors are more clear, but 'timed out' and 'connection refused' are very specific.
+ERROR_KEYWORDS = ["error", "failed", "timed out", "connection refused", "retrying"]
+
 def get_process_status(instance_type, instance_name):
     """
     Checks process status and performs a real-time health check by reading recent log entries.
@@ -65,23 +71,26 @@ def get_process_status(instance_type, instance_name):
         return 'running'
 
     try:
-        with open(log_path, 'r') as f:
+        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
             recent_lines = lines[-20:]
-            log_pattern = re.compile(r'^(d{4}-d{2}-d{2}Td{2}:d{2}:d{2}.d+Z)')
+            log_pattern = re.compile(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)')
             latest_success_time, latest_error_time = None, None
 
             for line in recent_lines:
                 match = log_pattern.match(line)
                 if not match: continue
 
-                log_time = datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+                try:
+                    log_time = datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+                except ValueError:
+                    continue # Skip malformed timestamps
 
                 if "established" in line or "Connected to server" in line:
                     if latest_success_time is None or log_time > latest_success_time:
                         latest_success_time = log_time
                 elif "retrying" in line.lower() or "error" in line.lower() or "failed" in line.lower():
-                    if latest_error_time is None or log_time > latest_success_time:
+                    if latest_error_time is None or log_time > latest_error_time:
                         latest_error_time = log_time
 
             if latest_success_time:
@@ -150,6 +159,65 @@ def get_all_services():
         load_all_from_disk()
     return service_configurations_cache
 
+def get_instance(instance_type, instance_name):
+    """Gets all configuration and status details for a single instance."""
+    try:
+        config_path = os.path.join(CONFIG_DIR, f"{instance_type}_{instance_name}.toml")
+        if not os.path.exists(config_path):
+            return None
+
+        config = toml.load(config_path)
+        details = config.get(instance_type, {})
+        metadata = _load_metadata().get(f"{instance_type}_{instance_name}", {})
+        traffic_stats = iptables_manager.get_traffic_stats()
+
+        instance_traffic = {'sent': 0, 'recv': 0}
+        services = details.get('services', {})
+        for service_name in services.keys():
+            service_stats = traffic_stats.get(service_name, {})
+            instance_traffic['sent'] += service_stats.get('sent', 0)
+            instance_traffic['recv'] += service_stats.get('recv', 0)
+            services[service_name]['traffic'] = service_stats
+
+        instance_data = {
+            'name': instance_name,
+            'status': get_process_status(instance_type, instance_name),
+            'addr': details.get('bind_addr') or details.get('remote_addr'),
+            'auto_restart': metadata.get('auto_restart', False),
+            'service_count': len(services),
+            'traffic': instance_traffic,
+            'services': services,
+            'transport_protocol': details.get('transport', {}).get('type', 'tcp'),
+            'public_key': metadata.get('public_key'),
+            'default_token': details.get('default_token')
+        }
+
+        if instance_data['transport_protocol'] == 'tls':
+            tls_config = details.get('transport', {}).get('tls', {})
+            if instance_type == 'server':
+                instance_data['tls_pkcs12'] = tls_config.get('pkcs12')
+                instance_data['tls_pkcs12_password'] = tls_config.get('pkcs12_password')
+                instance_data['tls_cert_content'] = _get_server_cert_content(instance_name)
+            else: # Client
+                instance_data['tls_trusted_root'] = tls_config.get('trusted_root')
+
+        return instance_data
+
+    except Exception as e:
+        log_message(f"Error getting instance details for {instance_type}_{instance_name}: {e}")
+        return None
+
+def _get_server_cert_content(instance_name):
+    cert_path = os.path.join(CONFIG_DIR, f"server_{instance_name}.crt")
+    if not os.path.exists(cert_path):
+        return None
+    try:
+        with open(cert_path, 'r') as f:
+            return f.read()
+    except IOError as e:
+        log_message(f"Failed to read cert for server_{instance_name}: {e}")
+        return None
+
 def get_all_instances(instance_type):
     if not service_configurations_cache:
         load_all_from_disk()
@@ -174,6 +242,7 @@ def get_all_instances(instance_type):
             config = toml.load(config_path)
             details = config.get(instance_type, {})
             instance_key = f"{instance_type}_{instance_name}"
+            instance_meta = metadata.get(instance_key, {})
 
             instance_traffic = {'sent': 0, 'recv': 0}
             services = details.get('services', {})
@@ -183,20 +252,29 @@ def get_all_instances(instance_type):
                 instance_traffic['recv'] += service_stats.get('recv', 0)
                 services[service_name]['traffic'] = service_stats
 
-            instances[instance_name] = {
-                'addr': details.get('bind_addr') or details.get('remote_addr'),
-                'auto_restart': metadata.get(instance_key, {}).get('auto_restart', False),
-                'service_count': len(services),
+            instance_data = {
+                'name': instance_name,
                 'status': get_process_status(instance_type, instance_name),
+                'addr': details.get('bind_addr') or details.get('remote_addr'),
+                'auto_restart': instance_meta.get('auto_restart', False),
+                'service_count': len(services),
                 'traffic': instance_traffic,
                 'services': services,
                 'transport_protocol': details.get('transport', {}).get('type', 'tcp'),
-                'public_key': metadata.get(instance_key, {}).get('public_key'),
-                'tls_trusted_root': details.get('transport', {}).get('tls', {}).get('trusted_root'),
-                'tls_hostname': details.get('transport', {}).get('tls', {}).get('hostname'),
-                'tls_pkcs12': details.get('transport', {}).get('tls', {}).get('pkcs12'),
-                'tls_pkcs12_password': details.get('transport', {}).get('tls', {}).get('pkcs12_password')
+                'public_key': instance_meta.get('public_key'),
             }
+
+            if instance_data['transport_protocol'] == 'tls':
+                tls_config = details.get('transport', {}).get('tls', {})
+                if instance_type == 'server':
+                    instance_data['tls_pkcs12'] = tls_config.get('pkcs12')
+                    instance_data['tls_pkcs12_password'] = tls_config.get('pkcs12_password')
+                    instance_data['tls_cert_content'] = _get_server_cert_content(instance_name)
+                else: # Client
+                    instance_data['tls_trusted_root'] = tls_config.get('trusted_root')
+
+            instances[instance_name] = instance_data
+
         except Exception as e:
             log_message(f"Error parsing {instance_type} file {instance_name}.toml: {e}")
     return instances
@@ -251,13 +329,21 @@ def _generate_tls_cert(instance_name, password):
     # Create PKCS#12 archive
     subprocess.check_output(f"openssl pkcs12 -export -out {pfx_path} -inkey {key_path} -in {cert_path} -passout pass:{password}", shell=True)
 
-    # Clean up intermediate files
-    # os.remove(cert_path)
-    # os.remove(key_path)
-
+    # We keep the .crt and .key files for reference or renewal, so no cleanup needed here.
     return pfx_path
 
-def add_instance(instance_type, instance_name, addr, default_token=None, auto_restart=False, transport_protocol='tcp', remote_public_key=None, tls_trusted_root=None, tls_hostname=None, tls_pkcs12=None, tls_pkcs12_password=None):
+def _save_trusted_root_cert(instance_name, cert_content):
+    if not cert_content: return None
+    cert_path = os.path.join(CONFIG_DIR, f"client_{instance_name}_ca.crt")
+    try:
+        with open(cert_path, 'w') as f:
+            f.write(cert_content)
+        return cert_path
+    except IOError as e:
+        log_message(f"Failed to save trusted root cert for {instance_name}: {e}")
+        return None
+
+def add_instance(instance_type, instance_name, addr, default_token=None, auto_restart=False, transport_protocol='tcp', remote_public_key=None, tls_trusted_root_content=None, tls_pkcs12_password=None):
     if not all([instance_type, instance_name, addr]): return False
     config_path = os.path.join(CONFIG_DIR, f"{instance_type}_{instance_name}.toml")
     if os.path.exists(config_path): return False
@@ -292,8 +378,9 @@ def add_instance(instance_type, instance_name, addr, default_token=None, auto_re
             tls_config['pkcs12_password'] = pfx_password
         elif instance_type == 'client':
             # For client, use provided trusted_root and hostname
-            if tls_trusted_root: tls_config['trusted_root'] = tls_trusted_root
-            if tls_hostname: tls_config['hostname'] = tls_hostname
+            cert_path = _save_trusted_root_cert(instance_name, tls_trusted_root_content)
+            if cert_path: tls_config['trusted_root'] = cert_path
+            tls_config['hostname'] = "localhost"
         if tls_config: transport_config['tls'] = tls_config
 
     config_data['transport'] = transport_config
@@ -314,52 +401,61 @@ def add_instance(instance_type, instance_name, addr, default_token=None, auto_re
     load_all_from_disk()
     return True
 
-def update_instance(instance_type, instance_name, new_addr, transport_protocol='tcp', remote_public_key=None, tls_trusted_root=None, tls_hostname=None, tls_pkcs12=None, tls_pkcs12_password=None):
+def update_instance(instance_type, instance_name, new_addr, transport_protocol='tcp', remote_public_key=None, tls_trusted_root_content=None, tls_pkcs12_password=None):
     config_path = os.path.join(CONFIG_DIR, f"{instance_type}_{instance_name}.toml")
     if not os.path.exists(config_path):
         return False
 
     config = toml.load(config_path)
+    instance_config = config.get(instance_type, {})
 
     if instance_type == 'server':
-        config[instance_type]['bind_addr'] = new_addr
+        instance_config['bind_addr'] = new_addr
     elif instance_type == 'client':
-        config[instance_type]['remote_addr'] = new_addr
+        instance_config['remote_addr'] = new_addr
     else:
         return False
 
-    transport_config = {'type': transport_protocol}
+    # Ensure transport structure exists
+    if 'transport' not in instance_config:
+        instance_config['transport'] = {}
+
+    # Update transport type
+    instance_config['transport']['type'] = transport_protocol
+
+    # Clear old transport configs if switching protocol
+    if transport_protocol != 'noise' and 'noise' in instance_config['transport']:
+        del instance_config['transport']['noise']
+    if transport_protocol != 'tls' and 'tls' in instance_config['transport']:
+        del instance_config['transport']['tls']
+
     if transport_protocol == 'noise':
-        if 'noise' not in config[instance_type]['transport']:
-            config[instance_type]['transport']['noise'] = {}
+        if 'noise' not in instance_config['transport']:
+            instance_config['transport']['noise'] = {}
         if instance_type == 'client' and remote_public_key:
-            config[instance_type]['transport']['noise']['remote_public_key'] = remote_public_key
+            instance_config['transport']['noise']['remote_public_key'] = remote_public_key
 
     elif transport_protocol == 'tls':
-        tls_config = {}
+        if 'tls' not in instance_config['transport']:
+            instance_config['transport']['tls'] = {}
+
         if instance_type == 'server':
-            # For server, update PKCS#12 path and password if provided
-            if tls_pkcs12: tls_config['pkcs12'] = tls_pkcs12
-            if tls_pkcs12_password: tls_config['pkcs12_password'] = tls_pkcs12_password
-            # If PKCS#12 or password not provided, retain existing if they exist in config
-            existing_tls_config = config.get(instance_type, {}).get('transport', {}).get('tls', {})
-            if 'pkcs12' not in tls_config and 'pkcs12' in existing_tls_config: tls_config['pkcs12'] = existing_tls_config['pkcs12']
-            if 'pkcs12_password' not in tls_config and 'pkcs12_password' in existing_tls_config: tls_config['pkcs12_password'] = existing_tls_config['pkcs12_password']
+            # Regenerate cert if it doesn't exist for a server switching to TLS
+            if not instance_config['transport']['tls'].get('pkcs12'):
+                pfx_password = secrets.token_hex(16)
+                pfx_path = _generate_tls_cert(f"{instance_type}_{instance_name}", pfx_password)
+                instance_config['transport']['tls']['pkcs12'] = pfx_path
+                instance_config['transport']['tls']['pkcs12_password'] = pfx_password
+            else: # Respect existing values if present
+                if tls_pkcs12_password: instance_config['transport']['tls']['pkcs12_password'] = tls_pkcs12_password
 
         elif instance_type == 'client':
-            # For client, update trusted_root and hostname if provided
-            if tls_trusted_root: tls_config['trusted_root'] = tls_trusted_root
-            if tls_hostname: tls_config['hostname'] = tls_hostname
-             # If trusted_root or hostname not provided, retain existing if they exist in config
-            existing_tls_config = config.get(instance_type, {}).get('transport', {}).get('tls', {})
-            if 'trusted_root' not in tls_config and 'trusted_root' in existing_tls_config: tls_config['trusted_root'] = existing_tls_config['trusted_root']
-            if 'hostname' not in tls_config and 'hostname' in existing_tls_config: tls_config['hostname'] = existing_tls_config['hostname']
+            cert_path = _save_trusted_root_cert(instance_name, tls_trusted_root_content)
+            if cert_path:
+                instance_config['transport']['tls']['trusted_root'] = cert_path
+            instance_config['transport']['tls']['hostname'] = "localhost"
 
-        if tls_config: config[instance_type]['transport']['tls'] = tls_config
-        # If no tls_config is generated but existing tls config exists, remove it
-        elif 'tls' in config.get(instance_type, {}).get('transport', {}): del config[instance_type]['transport']['tls']
-
-    config[instance_type]['transport'] = transport_config
+    config[instance_type] = instance_config
 
     with open(config_path, 'w') as f:
         toml.dump(config, f)

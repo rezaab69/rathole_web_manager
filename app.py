@@ -87,7 +87,21 @@ def dashboard():
     client_instances = rathole_manager.get_all_instances('client')
     tunnels = rathole_manager.get_all_services()
 
+    for name, server in server_instances.items():
+        if server.get('transport_protocol') == 'tls':
+            server['tls_cert_content'] = rathole_manager._get_server_cert_content(name)
+
     return render_template('dashboard.html', username=session['username'], tunnels=tunnels, servers=server_instances, clients=client_instances)
+
+@app.route('/view_cert/<instance_name>')
+def view_cert(instance_name):
+    if 'username' not in session: return redirect(url_for('login'))
+    cert_content = rathole_manager._get_server_cert_content(instance_name)
+    if cert_content:
+        return Response(cert_content, mimetype='text/plain')
+    else:
+        flash(f"Certificate for '{instance_name}' not found.", 'danger')
+        return redirect(url_for('dashboard'))
 
 @app.route('/add_instance', methods=['POST'])
 def add_instance():
@@ -101,11 +115,13 @@ def add_instance():
         token = "RezaAb"
     auto_restart = request.form.get('auto_restart') == 'on'
     transport_protocol = request.form.get('transport_protocol', 'tcp')
+    tls_pkcs12_password = request.form.get('tls_pkcs12_password')
+    tls_trusted_root_content = request.form.get('tls_trusted_root_content')
 
     if instance_type == 'server':
         addr = f"0.0.0.0:{port}"
         if all([name, port]):
-            if rathole_manager.add_instance('server', name, addr, default_token=token, auto_restart=auto_restart, transport_protocol=transport_protocol):
+            if rathole_manager.add_instance('server', name, addr, default_token=token, auto_restart=auto_restart, transport_protocol=transport_protocol, tls_pkcs12_password=tls_pkcs12_password):
                 flash(f"New server instance '{name}' created.", 'success')
             else:
                 flash(f"Failed to create server instance '{name}'. It might already exist.", 'danger')
@@ -117,7 +133,7 @@ def add_instance():
         addr = f"{address}:{port}"
         remote_public_key = request.form.get('remote_public_key')
         if all([name, address, port]):
-            if rathole_manager.add_instance('client', name, addr, default_token=token, auto_restart=auto_restart, transport_protocol=transport_protocol, remote_public_key=remote_public_key):
+            if rathole_manager.add_instance('client', name, addr, default_token=token, auto_restart=auto_restart, transport_protocol=transport_protocol, remote_public_key=remote_public_key, tls_trusted_root_content=tls_trusted_root_content):
                 flash(f"New client instance '{name}' created.", 'success')
             else:
                 flash(f"Failed to create client instance '{name}'. It might already exist.", 'danger')
@@ -162,6 +178,34 @@ def add_service():
             flash("Service Name/Port and Parent Instance are required.", 'danger')
 
     return redirect(url_for('dashboard'))
+
+@app.route('/api/instance/start', methods=['POST'])
+def api_start_instance():
+    data = request.json
+    instance_type = data.get('instance_type')
+    instance_name = data.get('instance_name')
+    if not all([instance_type, instance_name]):
+        return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
+    
+    success = rathole_manager.start_instance(instance_type, instance_name)
+    if success:
+        return jsonify({'status': 'success', 'message': f'{instance_name} started.'})
+    else:
+        return jsonify({'status': 'error', 'message': f'Failed to start {instance_name}.'}), 500
+
+@app.route('/api/instance/stop', methods=['POST'])
+def api_stop_instance():
+    data = request.json
+    instance_type = data.get('instance_type')
+    instance_name = data.get('instance_name')
+    if not all([instance_type, instance_name]):
+        return jsonify({'status': 'error', 'message': 'Missing parameters'}), 400
+
+    success = rathole_manager.stop_process(instance_type, instance_name)
+    if success:
+        return jsonify({'status': 'success', 'message': f'{instance_name} stopped.'})
+    else:
+        return jsonify({'status': 'error', 'message': f'Failed to stop {instance_name}.'}), 500
 
 @app.route('/start_instance/<instance_type>/<instance_name>')
 def start_instance(instance_type, instance_name):
@@ -217,12 +261,14 @@ def edit_instance():
     instance_name = request.form.get('instance_name')
     transport_protocol = request.form.get('transport_protocol', 'tcp')
     remote_public_key = request.form.get('remote_public_key')
+    tls_trusted_root_content = request.form.get('tls_trusted_root_content')
+    tls_pkcs12_password = request.form.get('tls_pkcs12_password')
 
     if instance_type == 'server':
         port = request.form.get('port')
         if all([instance_name, port]):
             addr = f"0.0.0.0:{port}"
-            if rathole_manager.update_instance(instance_type, instance_name, addr, transport_protocol=transport_protocol):
+            if rathole_manager.update_instance(instance_type, instance_name, addr, transport_protocol=transport_protocol, tls_pkcs12_password=tls_pkcs12_password):
                 flash(f"Server instance '{instance_name}' updated.", 'success')
             else:
                 flash(f"Failed to update server instance '{instance_name}'.", 'danger')
@@ -234,7 +280,7 @@ def edit_instance():
         port = request.form.get('port')
         if all([instance_name, address, port]):
             addr = f"{address}:{port}"
-            if rathole_manager.update_instance(instance_type, instance_name, addr, transport_protocol=transport_protocol, remote_public_key=remote_public_key):
+            if rathole_manager.update_instance(instance_type, instance_name, addr, transport_protocol=transport_protocol, remote_public_key=remote_public_key, tls_trusted_root_content=tls_trusted_root_content):
                 flash(f"Client instance '{instance_name}' updated.", 'success')
             else:
                 flash(f"Failed to update client instance '{instance_name}'.", 'danger')
@@ -279,6 +325,26 @@ def reset_traffic(service_name):
     else:
         flash(f"Failed to reset traffic counters for '{service_name}'.", 'danger')
     return redirect(url_for('dashboard'))
+
+@app.route('/api/status')
+def api_status():
+    if 'username' not in session:
+        return jsonify({}), 401 # Return empty object or an error
+
+    servers = rathole_manager.get_all_instances('server')
+    clients = rathole_manager.get_all_instances('client')
+    tunnels = rathole_manager.get_all_services()
+
+    # Convert traffic data to human-readable format for the frontend
+    for instances in [servers, clients]:
+        for instance in instances.values():
+            if 'services' in instance:
+                for service in instance['services'].values():
+                    if 'traffic' in service:
+                        service['traffic']['sent_hr'] = human_readable_bytes(service['traffic'].get('sent', 0))
+                        service['traffic']['recv_hr'] = human_readable_bytes(service['traffic'].get('recv', 0))
+
+    return jsonify(servers=servers, clients=clients, tunnels=tunnels)
 
 def stream_updates():
     if 'username' not in session:
