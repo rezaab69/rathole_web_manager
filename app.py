@@ -327,6 +327,8 @@ def reset_traffic(service_name):
     return redirect(url_for('dashboard'))
 
 @app.route('/api/status')
+# Exempt the frequent status polling endpoint from rate limiting
+@limiter.exempt
 def api_status():
     if 'username' not in session:
         return jsonify({}), 401 # Return empty object or an error

@@ -47,16 +47,12 @@
                         <label class="form-check-label" for="autoRestartSwitch-server-{{ name }}">Auto-Restart</label>
                     </div>
                 </div>
-                <p class="mb-1"><strong>Status:</strong> <span class="badge bg-{{ 'success' if server.status == 'active' else ('secondary' if server.status == 'stopped' else 'warning') }}">{{ server.status }}</span></p>
                 <p class="mb-1"><strong>Transport:</strong> <span class="badge bg-info">{{ server.transport_protocol.upper() }}</span></p>
-                <p class="mb-1"><strong>Auto-Restart:</strong> {{ 'Enabled' if server.auto_restart else 'Disabled' }} <a href="{{ url_for('toggle_auto_restart', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></a></p>
 
                 {% if server.transport_protocol == 'noise' %}
                 <p class="mb-1"><strong>Noise Public Key:</strong> <code class="key-code">{{ server.public_key }}</code> <button class="btn btn-sm btn-outline-secondary btn-copy" onclick="copyToClipboard('{{ server.public_key }}')"><i class="bi bi-clipboard"></i></button></p>
                 {% elif server.transport_protocol == 'tls' %}
-                <p class="mb-1"><strong>PKCS#12 Path:</strong> <code>{{ server.tls_pkcs12 }}</code></p>
-                <p class="mb-1"><strong>PKCS#12 Password:</strong> <code class="key-code">{{ server.tls_pkcs12_password }}</code> <button class="btn btn-sm btn-outline-secondary btn-copy" onclick="copyToClipboard('{{ server.tls_pkcs12_password }}')"><i class="bi bi-clipboard"></i></button></p>
-                <button class="btn btn-sm btn-info me-2" data-bs-toggle="modal" data-bs-target="#viewCertModal-server-{{ name }}">View & Copy Certificate</button>
+                <button class="btn btn-sm btn-info me-2" data-bs-toggle="modal" data-bs-target="#viewCertModal-server-{{ name }}" onclick="setTimeout(function(){selectCertText('{{ name }}');}, 500)">View & Copy Certificate</button>
                 <a href="{{ url_for('regenerate_cert', instance_type='server', instance_name=name) }}" class="btn btn-sm btn-warning me-2" onclick="return confirm('Are you sure you want to regenerate the TLS certificate for {{ name }}?');">Regenerate Certificate</a>
                 {% endif %}
 
@@ -109,9 +105,7 @@
                         <label class="form-check-label" for="autoRestartSwitch-client-{{ name }}">Auto-Restart</label>
                     </div>
                 </div>
-                <p class="mb-1"><strong>Status:</strong> <span class="badge bg-{{ 'success' if client.status == 'active' else ('secondary' if client.status == 'stopped' else 'warning') }}">{{ client.status }}</span></p>
                 <p class="mb-1"><strong>Transport:</strong> <span class="badge bg-info">{{ client.transport_protocol.upper() }}</span></p>
-                <p class="mb-1"><strong>Auto-Restart:</strong> {{ 'Enabled' if client.auto_restart else 'Disabled' }} <a href="{{ url_for('toggle_auto_restart', instance_type='client', instance_name=name) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></a></p>
 
                 {% if client.transport_protocol == 'noise' %}
                 <p class="mb-1"><strong>Noise Public Key:</strong> <code class="key-code">{{ client.public_key }}</code> <button class="btn btn-sm btn-outline-secondary btn-copy" onclick="copyToClipboard('{{ client.public_key }}')"><i class="bi bi-clipboard"></i></button></p>
@@ -582,15 +576,45 @@
     }
 
     function copyToClipboard(text, type = 'Key') {
-        navigator.clipboard.writeText(text).then(function() {
-            const toastEl = document.getElementById('copyToast');
-            const toastBody = document.getElementById('toast-body-content');
-            toastBody.textContent = `${type} copied to clipboard!`;
-            const toast = new bootstrap.Toast(toastEl);
-            toast.show();
-        }, function(err) {
-            console.error('Async: Could not copy text: ', err);
-        });
+        // Try asynchronous clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text)
+                .then(() => showCopyToast(type))
+                .catch(err => {
+                    console.warn('navigator.clipboard failed, falling back', err);
+                    fallbackCopy(text, type);
+                });
+        } else {
+            fallbackCopy(text, type);
+        }
+    }
+
+    function fallbackCopy(text, type) {
+        // Create a temporary textarea to select and copy
+        const tempTextarea = document.createElement('textarea');
+        tempTextarea.value = text;
+        document.body.appendChild(tempTextarea);
+        tempTextarea.select();
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                showCopyToast(type);
+            } else {
+                showToast('Copy failed', 'error');
+            }
+        } catch (err) {
+            console.error('Fallback: Could not copy text', err);
+            showToast('Copy failed', 'error');
+        }
+        document.body.removeChild(tempTextarea);
+    }
+
+    function showCopyToast(type) {
+        const toastEl = document.getElementById('copyToast');
+        const toastBody = document.getElementById('toast-body-content');
+        toastBody.textContent = `${type} copied to clipboard!`;
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
     }
 
     function showToast(message, level = 'success') {
@@ -617,6 +641,14 @@
 
         if (noiseFields) noiseFields.style.display = (protocol === 'noise') ? 'flex' : 'none';
         if (tlsFields) tlsFields.style.display = (protocol === 'tls') ? 'flex' : 'none';
+    }
+
+    function selectCertText(name) {
+        var textarea = document.getElementById('cert-content-' + name);
+        if (textarea) {
+            textarea.focus();
+            textarea.select();
+        }
     }
 
     // Initial load and periodic refresh

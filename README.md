@@ -5,21 +5,29 @@ A web-based graphical interface to manage [rathole](https://github.com/rathole-o
 ## Features
 
 *   **Web-Based UI:** Manage tunnels from your browser.
-    *   Login page for secure access.
-    *   Dashboard for viewing and managing all configured tunnel services.
+    *   Secure login page.
+    *   Dashboard for viewing and managing all server and client instances.
+    *   Real-time status updates for instances (active, stopped, etc.) and traffic.
     *   Settings page to change panel login credentials.
-*   **Rathole Integration:**
-    *   **Panel Hosted Services:** Configure the panel to act as a rathole server, exposing multiple local or network-accessible services through unique public ports.
-    *   **Remote Target Services:** Configure the panel to act as a rathole client, connecting to a remote service and exposing it through a rathole server (either the panel's own or an external one).
-    *   Automatic token generation (optional).
-    *   Start, stop, and remove individual tunnel services.
-    *   View status of services and the main rathole server instance.
-*   **Automatic Installation (Ubuntu):**
-    *   Includes an `install.sh` script to automate setup on Ubuntu systems.
-    *   Installs all required dependencies, including the rathole binary.
-    *   Sets up the Python Flask application.
-    *   Generates a random admin username and password for initial login.
-    *   Provides guidance for firewall and systemd service configuration.
+*   **Rathole Instance Management:**
+    *   Run multiple `rathole` server and client instances independently.
+    *   Add, remove, start, stop, and edit instances.
+    *   Configure auto-restart for each instance on failure.
+*   **Secure Transport Protocols:**
+    *   Full support for **TCP**, **Noise**, and **TLS** transport protocols.
+    *   **Noise:** Automatic key pair generation for secure, modern connections.
+    *   **TLS:** Automatic on-demand certificate generation and management for server instances.
+*   **Service Management:**
+    *   Add and remove individual port forwarding services (tunnels) to any instance.
+*   **Traffic Monitoring:**
+    *   View sent and received traffic for each service in real-time.
+    *   Reset traffic counters for individual services.
+*   **Automatic Installation (Ubuntu/Debian):**
+    *   Includes an `install.sh` script to automate setup.
+    *   Installs dependencies, downloads the `rathole` binary, and sets up the Python environment.
+    *   Generates a random admin password for initial login.
+    *   Sets up `iptables` rules required for traffic monitoring.
+    *   Creates a `systemd` service for easy management.
 
 ## Installation
 
@@ -39,14 +47,14 @@ cd rathole_management
 The `install.sh` script will set up the application, its dependencies, and a `systemd` service to run it automatically.
 
 ```bash
-sudo bash install.sh "$(pwd)"
+sudo bash install.sh
 ```
 
 The script will:
-- Install dependencies like Python, Pip, and Certbot.
-- Download and install the `rathole` binary.
+- Install dependencies like Python, Pip, and the `build-essential` package.
+- Download and install the latest `rathole` binary to `/usr/local/bin`.
 - Set up the application in `/opt/my-tunnel-manager`.
-- Create a Python virtual environment.
+- Create a Python virtual environment and install required packages.
 - Generate a random admin password.
 - Set up `iptables` rules for traffic monitoring.
 - Create and enable a `systemd` service to run the panel.
@@ -79,34 +87,30 @@ Access the web panel using the URL provided at the end of the installation. Log 
 
 Navigate to the **Settings** page and change your password immediately.
 
-### 3. (Optional) Set Up a Domain and SSL
-
-To access your panel via a domain with a valid SSL certificate:
-1.  **Point your domain's A record** to your server's IP address.
-2.  Navigate to the **Settings** page in the panel.
-3.  Enter your domain name in the **Domain & SSL Configuration** section and click **Save Domain**.
-4.  The SSL status will appear. Click the **Generate Certificate** button.
-5.  The panel will use Certbot to obtain a certificate from Let's Encrypt. The logs will be displayed in the text area.
-6.  If successful, a **Restart Program** button will appear. Click it.
-7.  The program will restart. After a few seconds, your browser will be redirected to the `https` version of your panel.
-
-### 4. Adding and Managing Instances
+### 3. Adding and Managing Instances
 
 -   **Instances** are running `rathole` processes. You can have multiple server and client instances.
 -   Click the **Add Server Instance** or **Add Client Instance** buttons to create a new instance.
-    -   **Server Instance:** Listens for connections from a `rathole` client.
-    -   **Client Instance:** Connects to a remote `rathole` server.
+-   Select the desired **Transport Protocol** (TCP, Noise, or TLS).
+    -   For **Noise** servers, keys are generated automatically. For clients, you must provide the server's public key.
+    -   For **TLS** servers, a self-signed certificate is generated automatically. You can copy the certificate content from the modal to configure your clients.
 -   You can **Start**, **Stop**, **Remove**, and **Edit** instances from the dashboard.
+-   Toggle the **Auto-Restart** switch to enable or disable automatic restarts for an instance if its process fails.
 
-### 5. Adding and Managing Services
+### 4. Adding and Managing Services
 
 -   **Services** are the individual tunnels within an instance.
 -   Click the **Add Port** button on an instance card to add a new service.
 -   You can **Remove** services from the service list on each instance card.
 
+### 5. Monitoring Traffic
+
+-   The **Ports Traffic** section on the dashboard shows the data sent and received for each active service.
+-   Click the **Reset** button to clear the traffic counters for a specific service.
+
 ### Command-Line Interface (CLI)
 
-The `tunnel-manager-web` command provides a way to manage the application from the command line.
+The `tunnel-manager-web` command provides a way to manage the application from the command line. It must be run with `sudo`.
 
 **Change a User's Password:**
 ```bash
@@ -117,12 +121,6 @@ Example:
 sudo tunnel-manager-web password admin myNewSecurePassword123
 ```
 
-**Reset the Domain Name:**
-This command deletes the configured domain, reverting the panel to HTTP on the next restart.
-```bash
-sudo tunnel-manager-web reset-domain
-```
-
 **Manage the Web Service:**
 You can start, stop, and restart the web panel using the following commands:
 ```bash
@@ -130,6 +128,29 @@ sudo tunnel-manager-web start
 sudo tunnel-manager-web stop
 sudo tunnel-manager-web restart
 ```
+
+## Technologies Used
+
+*   **Backend:** Python, Flask
+*   **Frontend:** HTML, CSS, JavaScript, Bootstrap 5
+*   **WSGI Server:** Gunicorn
+*   **Process Management:** `systemd`
+*   **Tunneling:** `rathole`
+*   **Networking:** `iptables` (for traffic accounting)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a pull request or open an issue for any bugs, feature requests, or improvements.
+
+1.  Fork the repository.
+2.  Create a new branch (`git checkout -b feature/YourFeature`).
+3.  Commit your changes (`git commit -m 'Add some feature'`).
+4.  Push to the branch (`git push origin feature/YourFeature`).
+5.  Open a pull request.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## TODO / Future Enhancements
 
