@@ -199,7 +199,9 @@ def get_instance(instance_type, instance_name):
                 instance_data['tls_pkcs12_password'] = tls_config.get('pkcs12_password')
                 instance_data['tls_cert_content'] = _get_server_cert_content(instance_name)
             else: # Client
-                instance_data['tls_trusted_root'] = tls_config.get('trusted_root')
+                trusted_root_path = tls_config.get('trusted_root')
+                instance_data['tls_trusted_root'] = trusted_root_path
+                instance_data['tls_trusted_root_content'] = _get_client_cert_content(trusted_root_path)
 
         return instance_data
 
@@ -216,6 +218,16 @@ def _get_server_cert_content(instance_name):
             return f.read()
     except IOError as e:
         log_message(f"Failed to read cert for server_{instance_name}: {e}")
+        return None
+
+def _get_client_cert_content(cert_path):
+    if not cert_path or not os.path.exists(cert_path):
+        return None
+    try:
+        with open(cert_path, 'r') as f:
+            return f.read()
+    except IOError as e:
+        log_message(f"Failed to read trusted root cert at {cert_path}: {e}")
         return None
 
 def get_all_instances(instance_type):
@@ -271,7 +283,9 @@ def get_all_instances(instance_type):
                     instance_data['tls_pkcs12_password'] = tls_config.get('pkcs12_password')
                     instance_data['tls_cert_content'] = _get_server_cert_content(instance_name)
                 else: # Client
-                    instance_data['tls_trusted_root'] = tls_config.get('trusted_root')
+                    trusted_root_path = tls_config.get('trusted_root')
+                    instance_data['tls_trusted_root'] = trusted_root_path
+                    instance_data['tls_trusted_root_content'] = _get_client_cert_content(trusted_root_path)
 
             instances[instance_name] = instance_data
 

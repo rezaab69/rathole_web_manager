@@ -357,22 +357,22 @@
                     <div class="mb-3"><label class="form-label">Remote Port:</label><input type="text" class="form-control" name="port" value="{{ client.addr.split(':')[-1] }}" required></div>
                     <div class="mb-3">
                         <label class="form-label">Transport Protocol:</label>
-                        <select class="form-select" id="edit-transport-protocol-client" name="transport_protocol" onchange="toggleTransportFields('client', 'edit')">
+                        <select class="form-select" id="edit-transport-protocol-client-{{ name }}" name="transport_protocol" onchange="toggleTransportFields('client', 'edit', '{{ name }}')">
                             <option value="tcp" {% if client.transport_protocol == 'tcp' %}selected{% endif %}>TCP</option>
                             <option value="noise" {% if client.transport_protocol == 'noise' %}selected{% endif %}>Noise</option>
                             <option value="tls" {% if client.transport_protocol == 'tls' %}selected{% endif %}>TLS</option>
                         </select>
                     </div>
-                    <div id="edit-client-noise-fields" class="row g-3 mb-3" style="display: none;">
+                    <div id="edit-client-noise-fields-{{ name }}" class="row g-3 mb-3" style="display: {% if client.transport_protocol == 'noise' %}block{% else %}none{% endif %};">
                         <div class="col-md-12">
-                            <label for="edit-remote-public-key-client" class="form-label">Remote (Server) Public Key</label>
-                            <input type="text" class="form-control" id="edit-remote-public-key-client" name="remote_public_key">
+                            <label for="edit-remote-public-key-client-{{ name }}" class="form-label">Remote (Server) Public Key</label>
+                            <input type="text" class="form-control" id="edit-remote-public-key-client-{{ name }}" name="remote_public_key">
                         </div>
                     </div>
-                    <div id="edit-client-tls-fields" class="row g-3 mb-3" style="display: none;">
+                    <div id="edit-client-tls-fields-{{ name }}" class="row g-3 mb-3" style="display: {% if client.transport_protocol == 'tls' %}block{% else %}none{% endif %};">
                         <div class="col-md-12">
-                            <label for="edit-tls-trusted-root-content-client" class="form-label">Trusted Root Certificate Content</label>
-                            <textarea class="form-control" id="edit-tls-trusted-root-content-client" name="tls_trusted_root_content" rows="3" placeholder="Paste the new server's root CA certificate here. Leave blank to keep existing."></textarea>
+                            <label for="edit-tls-trusted-root-content-client-{{ name }}" class="form-label">Trusted Root Certificate Content</label>
+                            <textarea class="form-control" id="edit-tls-trusted-root-content-client-{{ name }}" name="tls_trusted_root_content" rows="5" placeholder="Paste the new server's root CA certificate here. Leave blank to keep existing.">{{ client.tls_trusted_root_content or '' }}</textarea>
                         </div>
                     </div>
                 </div>
@@ -634,13 +634,13 @@
         toast.show();
     }
 
-    function toggleTransportFields(instanceType, formType) {
-        const protocol = document.getElementById(`${formType}-transport-protocol-${instanceType}`).value;
-        const noiseFields = document.getElementById(`${formType}-${instanceType}-noise-fields`);
-        const tlsFields = document.getElementById(`${formType}-${instanceType}-tls-fields`);
+    function toggleTransportFields(instanceType, formType, instanceName) {
+        const protocol = document.getElementById(`${formType}-transport-protocol-${instanceType}-${instanceName}`).value;
+        const noiseFields = document.getElementById(`${formType}-${instanceType}-noise-fields-${instanceName}`);
+        const tlsFields = document.getElementById(`${formType}-${instanceType}-tls-fields-${instanceName}`);
 
-        if (noiseFields) noiseFields.style.display = (protocol === 'noise') ? 'flex' : 'none';
-        if (tlsFields) tlsFields.style.display = (protocol === 'tls') ? 'flex' : 'none';
+        if (noiseFields) noiseFields.style.display = protocol === 'noise' ? 'flex' : 'none';
+        if (tlsFields) tlsFields.style.display = protocol === 'tls' ? 'flex' : 'none';
     }
 
     function selectCertText(name) {
