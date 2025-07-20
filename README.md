@@ -38,7 +38,7 @@ These instructions are for a Debian-based Linux distribution (like Ubuntu).
 First, clone this repository to your server.
 
 ```bash
-git clone https://github.com/rezaab69/rathole_management.git
+git clone https://github.com/rezaab69/rathole_web_manager.git
 cd rathole_management
 ```
 
