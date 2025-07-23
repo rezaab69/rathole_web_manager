@@ -110,7 +110,7 @@ if [ "$IS_INSTALLED" = "true" ]; then
         sudo .venv/bin/python -c "
 import database
 database.init_db()
-database.update_password('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
+database.add_or_update_user('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
 "
         echo -e "${GREEN}Admin Username: $ADMIN_USERNAME${NC}"
         echo -e "${GREEN}New Admin Password: $ADMIN_PASSWORD${NC} ${RED}(SAVE THIS! It will not be shown again.)${NC}"
@@ -122,9 +122,9 @@ else
     ADMIN_PASSWORD=$(openssl rand -base64 12)
     ADMIN_USERNAME="admin"
     sudo .venv/bin/python -c "
-import database, app
+import database
 database.init_db()
-app.create_initial_user('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
+database.add_or_update_user('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
 "
 fi
 
