@@ -405,7 +405,7 @@ def settings():
             elif len(new_password) < 8:
                 flash('New password must be at least 8 characters long.', 'danger')
             else:
-                if database.update_password(username, new_password):
+                if database.add_or_update_user(username, new_password):
                     flash('Password updated successfully!', 'success')
                 else:
                     flash('Failed to update password. Please try again.', 'danger')
