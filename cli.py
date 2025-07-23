@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 def change_password(args):
     """Handler for the 'password' subcommand."""
-    if database.update_password(args.username, args.new_password):
+    if database.add_or_update_user(args.username, args.new_password):
         print(f"Successfully changed password for user '{args.username}'.")
     else:
         print(f"Error: Could not change password for user '{args.username}'. User may not exist.")
