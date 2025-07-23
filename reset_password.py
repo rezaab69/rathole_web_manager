@@ -7,7 +7,7 @@ def main():
     parser.add_argument('password', type=str, help="The new password for the user.")
     args = parser.parse_args()
 
-    if database.update_password(args.username, args.password):
+    if database.add_or_update_user(args.username, args.password):
         print(f"Password for user '{args.username}' has been successfully reset.")
     else:
         print(f"Failed to reset password for user '{args.username}'. User may not exist.")
