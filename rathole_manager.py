@@ -159,6 +159,8 @@ def get_all_services():
         load_all_from_disk()
     return service_configurations_cache
 
+import database
+
 def get_instance(instance_type, instance_name):
     """Gets all configuration and status details for a single instance."""
     try:
@@ -169,15 +171,21 @@ def get_instance(instance_type, instance_name):
         config = toml.load(config_path)
         details = config.get(instance_type, {})
         metadata = _load_metadata().get(f"{instance_type}_{instance_name}", {})
-        traffic_stats = iptables_manager.get_traffic_stats()
 
         instance_traffic = {'sent': 0, 'recv': 0}
         services = details.get('services', {})
         for service_name in services.keys():
-            service_stats = traffic_stats.get(service_name, {})
-            instance_traffic['sent'] += service_stats.get('sent', 0)
-            instance_traffic['recv'] += service_stats.get('recv', 0)
-            services[service_name]['traffic'] = service_stats
+            service_stats_db = database.get_traffic_data(service_name) or {'sent_bytes': 0, 'recv_bytes': 0}
+
+            # Prepare the dictionary for the frontend
+            service_stats_frontend = {
+                'sent': service_stats_db.get('sent_bytes', 0),
+                'recv': service_stats_db.get('recv_bytes', 0)
+            }
+
+            instance_traffic['sent'] += service_stats_frontend['sent']
+            instance_traffic['recv'] += service_stats_frontend['recv']
+            services[service_name]['traffic'] = service_stats_frontend
 
         instance_data = {
             'name': instance_name,
@@ -185,7 +193,7 @@ def get_instance(instance_type, instance_name):
             'addr': details.get('bind_addr') or details.get('remote_addr'),
             'auto_restart': metadata.get('auto_restart', False),
             'service_count': len(services),
-            'traffic': instance_traffic,
+            'traffic': {'sent': instance_traffic['sent'], 'recv': instance_traffic['recv']},
             'services': services,
             'transport_protocol': details.get('transport', {}).get('type', 'tcp'),
             'public_key': metadata.get('public_key'),
@@ -236,7 +244,6 @@ def get_all_instances(instance_type):
 
     instances = {}
     metadata = _load_metadata()
-    traffic_stats = iptables_manager.get_traffic_stats()
 
     instance_names = set()
     for service in service_configurations_cache.values():
@@ -259,10 +266,17 @@ def get_all_instances(instance_type):
             instance_traffic = {'sent': 0, 'recv': 0}
             services = details.get('services', {})
             for service_name in services.keys():
-                service_stats = traffic_stats.get(service_name, {})
-                instance_traffic['sent'] += service_stats.get('sent', 0)
-                instance_traffic['recv'] += service_stats.get('recv', 0)
-                services[service_name]['traffic'] = service_stats
+                service_stats_db = database.get_traffic_data(service_name) or {'sent_bytes': 0, 'recv_bytes': 0}
+
+                # Prepare the dictionary for the frontend
+                service_stats_frontend = {
+                    'sent': service_stats_db.get('sent_bytes', 0),
+                    'recv': service_stats_db.get('recv_bytes', 0)
+                }
+
+                instance_traffic['sent'] += service_stats_frontend['sent']
+                instance_traffic['recv'] += service_stats_frontend['recv']
+                services[service_name]['traffic'] = service_stats_frontend
 
             instance_data = {
                 'name': instance_name,
@@ -270,7 +284,7 @@ def get_all_instances(instance_type):
                 'addr': details.get('bind_addr') or details.get('remote_addr'),
                 'auto_restart': instance_meta.get('auto_restart', False),
                 'service_count': len(services),
-                'traffic': instance_traffic,
+                'traffic': {'sent': instance_traffic['sent'], 'recv': instance_traffic['recv']},
                 'services': services,
                 'transport_protocol': details.get('transport', {}).get('type', 'tcp'),
                 'public_key': instance_meta.get('public_key'),
@@ -604,6 +618,7 @@ def remove_service(service_name):
         with open(config_path, 'w') as f: toml.dump(config, f)
     else: return False
 
+    database.delete_traffic_data(service_name)
     load_all_from_disk()
     return True
 

@@ -12,6 +12,14 @@ echo "Using application source directory: $APP_SOURCE_DIR"
 
 # --- Configuration ---
 APP_DIR="/opt/my-tunnel-manager"
+
+# Check if the application is already installed
+IS_INSTALLED="false"
+if [ -d "$APP_DIR" ] && [ -f "$APP_DIR/instance/users.db" ]; then
+    IS_INSTALLED="true"
+    echo "Tunnel Manager appears to be already installed."
+fi
+
 PYTHON_EXEC="python3"
 PIP_EXEC="pip3"
 RATHOLE_VERSION="v0.5.0"
@@ -61,6 +69,7 @@ sudo cp -r "$APP_SOURCE_DIR/app.py" "$APP_DIR/"
 sudo cp -r "$APP_SOURCE_DIR/database.py" "$APP_DIR/"
 sudo cp -r "$APP_SOURCE_DIR/rathole_manager.py" "$APP_DIR/"
 sudo cp -r "$APP_SOURCE_DIR/iptables_manager.py" "$APP_DIR/"
+sudo cp -r "$APP_SOURCE_DIR/traffic_manager.py" "$APP_DIR/"
 sudo cp -r "$APP_SOURCE_DIR/health_checker.py" "$APP_DIR/"
 sudo cp -r "$APP_SOURCE_DIR/ssl_manager.py" "$APP_DIR/"
 sudo cp -r "$APP_SOURCE_DIR/reset_password.py" "$APP_DIR/"
@@ -81,14 +90,33 @@ echo "Installing Python dependencies..."
 sudo .venv/bin/pip install -r requirements.txt
 
 # --- 5. Initial Database and User Setup ---
-echo "Initializing database and creating admin user..."
-ADMIN_PASSWORD=$(openssl rand -base64 12)
-ADMIN_USERNAME="admin"
-sudo .venv/bin/python -c "
+if [ "$IS_INSTALLED" = "true" ]; then
+    echo ""
+    read -p "Tunnel Manager is already installed. Do you want to reset the admin password? (y/N): " RESET_PASSWORD_CHOICE
+    if [[ "$RESET_PASSWORD_CHOICE" =~ ^[Yy]$ ]]; then
+        echo "Resetting admin password..."
+        ADMIN_USERNAME="admin"
+        ADMIN_PASSWORD=$(openssl rand -base64 12)
+        sudo .venv/bin/python -c "
+import database
+database.init_db()
+database.update_password('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
+"
+        echo "Admin Username: $ADMIN_USERNAME"
+        echo "New Admin Password: $ADMIN_PASSWORD (SAVE THIS! It will not be shown again.)"
+    else
+        echo "Skipping password reset."
+    fi
+else
+    echo "Initializing database and creating admin user..."
+    ADMIN_PASSWORD=$(openssl rand -base64 12)
+    ADMIN_USERNAME="admin"
+    sudo .venv/bin/python -c "
 import database, app
 database.init_db()
 app.create_initial_user('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
 "
+fi
 
 # --- 6. iptables and Default Config Setup ---
 echo "Setting up iptables for traffic monitoring..."
@@ -139,8 +167,10 @@ fi
 DEFAULT_RATHOLE_PORT="2333"
 
 echo "Web Panel URL: http://${SERVER_IP_FOR_URL}:5001"
-echo "Admin Username: $ADMIN_USERNAME"
-echo "Admin Password: $ADMIN_PASSWORD  (SAVE THIS! It will not be shown again.)"
+if [ "$IS_INSTALLED" = "false" ]; then
+    echo "Admin Username: $ADMIN_USERNAME"
+    echo "Admin Password: $ADMIN_PASSWORD  (SAVE THIS! It will not be shown again.)"
+fi
 echo ""
 echo "Important Next Steps:"
 echo "1. Configure your firewall to allow traffic on required ports."

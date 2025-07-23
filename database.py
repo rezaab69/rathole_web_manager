@@ -34,6 +34,16 @@ def init_db():
         )
     ''')
 
+    # Traffic data table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traffic_data (
+            service_name TEXT PRIMARY KEY,
+            sent_bytes INTEGER NOT NULL,
+            recv_bytes INTEGER NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -125,6 +135,52 @@ def delete_setting(key):
         return True
     except Exception as e:
         print(f"Error deleting setting '{key}': {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_traffic_data(service_name, sent_bytes, recv_bytes):
+    """Inserts or updates the traffic data for a given service."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO traffic_data (service_name, sent_bytes, recv_bytes, timestamp)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(service_name) DO UPDATE SET
+                sent_bytes = excluded.sent_bytes,
+                recv_bytes = excluded.recv_bytes,
+                timestamp = CURRENT_TIMESTAMP
+        """, (service_name, sent_bytes, recv_bytes))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating traffic data for '{service_name}': {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_traffic_data(service_name):
+    """Retrieves the last recorded traffic data for a given service."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sent_bytes, recv_bytes FROM traffic_data WHERE service_name = ?", (service_name,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {'sent_bytes': row['sent_bytes'], 'recv_bytes': row['recv_bytes']}
+    return None
+
+def delete_traffic_data(service_name):
+    """Deletes the traffic data for a given service."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM traffic_data WHERE service_name = ?", (service_name,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error deleting traffic data for '{service_name}': {e}")
         return False
     finally:
         conn.close()

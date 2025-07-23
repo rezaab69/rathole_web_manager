@@ -9,6 +9,7 @@ import health_checker
 import json
 import time
 import iptables_manager
+import traffic_manager
 
 database.init_db()
 app = Flask(__name__)
@@ -322,6 +323,7 @@ def reset_traffic(service_name):
     if 'username' not in session: return redirect(url_for('login'))
     if iptables_manager.reset_traffic_counters(service_name):
         flash(f"Traffic counters for service '{service_name}' have been reset.", 'success')
+        database.delete_traffic_data(service_name)
     else:
         flash(f"Failed to reset traffic counters for '{service_name}'.", 'danger')
     return redirect(url_for('dashboard'))
@@ -489,6 +491,7 @@ def create_initial_user(username, password):
 
 if __name__ == '__main__':
     health_checker.start_background_checker()
+    traffic_manager.start_traffic_updater()
 
     domain = database.get_setting('domain_name')
     ssl_context = None
