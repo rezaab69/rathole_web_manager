@@ -102,8 +102,8 @@ import database
 database.init_db()
 database.update_password('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
 "
-        echo "Admin Username: $ADMIN_USERNAME"
-        echo "New Admin Password: $ADMIN_PASSWORD (SAVE THIS! It will not be shown again.)"
+        echo "${GREEN}Admin Username: $ADMIN_USERNAME"
+        echo "${GREEN}New Admin Password: $ADMIN_PASSWORD (SAVE THIS! It will not be shown again.)"
     else
         echo "Skipping password reset."
     fi
@@ -166,10 +166,10 @@ if [ -z "$SERVER_IP_FOR_URL" ]; then
 fi
 DEFAULT_RATHOLE_PORT="2333"
 
-echo "Web Panel URL: http://${SERVER_IP_FOR_URL}:5001"
+echo "${GREEN}Web Panel URL: http://${SERVER_IP_FOR_URL}:5001"
 if [ "$IS_INSTALLED" = "false" ]; then
-    echo "Admin Username: $ADMIN_USERNAME"
-    echo "Admin Password: $ADMIN_PASSWORD  (SAVE THIS! It will not be shown again.)"
+    echo "${GREEN}Admin Username: $ADMIN_USERNAME"
+    echo "${GREEN}Admin Password: $ADMIN_PASSWORD  (SAVE THIS! It will not be shown again.)"
 fi
 echo ""
 echo "Important Next Steps:"
