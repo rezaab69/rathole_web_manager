@@ -481,13 +481,8 @@ def init_db_route():
 
 @app.route('/create_user')
 def create_user():
-    create_initial_user('admin', 'password')
+    database.add_or_update_user('admin', 'password')
     return 'user created'
-
-def create_initial_user(username, password):
-    if not database.get_user(username):
-        return database.add_user(username, password)
-    return True
 
 if __name__ == '__main__':
     health_checker.start_background_checker()
