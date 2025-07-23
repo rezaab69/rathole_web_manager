@@ -5,6 +5,16 @@ set -e
 
 echo "Starting Tunnel Manager Installation..."
 
+
+# colors
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+YELLOW="\033[0;33m"
+BLUE="\033[0;34m"
+CYAN="\033[0;36m"
+NC="\033[0m" # No Color
+
+
 # Determine the script's own directory
 APP_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Using application source directory: $APP_SOURCE_DIR"
@@ -102,8 +112,8 @@ import database
 database.init_db()
 database.update_password('$ADMIN_USERNAME', '$ADMIN_PASSWORD')
 "
-        echo "${GREEN}Admin Username: $ADMIN_USERNAME"
-        echo "${GREEN}New Admin Password: $ADMIN_PASSWORD (SAVE THIS! It will not be shown again.)"
+        echo -e "${GREEN}Admin Username: $ADMIN_USERNAME${NC}"
+        echo -e "${GREEN}New Admin Password: $ADMIN_PASSWORD${NC} ${RED}(SAVE THIS! It will not be shown again.)${NC}"
     else
         echo "Skipping password reset."
     fi
@@ -168,8 +178,8 @@ DEFAULT_RATHOLE_PORT="2333"
 
 echo "${GREEN}Web Panel URL: http://${SERVER_IP_FOR_URL}:5001"
 if [ "$IS_INSTALLED" = "false" ]; then
-    echo "${GREEN}Admin Username: $ADMIN_USERNAME"
-    echo "${GREEN}Admin Password: $ADMIN_PASSWORD  (SAVE THIS! It will not be shown again.)"
+    echo -e "${GREEN}Admin Username: $ADMIN_USERNAME${NC}"
+    echo -e "${GREEN}Admin Password: $ADMIN_PASSWORD${NC}  ${RED}(SAVE THIS! It will not be shown again.)${NC}"
 fi
 echo ""
 echo "Important Next Steps:"
