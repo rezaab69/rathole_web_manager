@@ -47,22 +47,26 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_user(username, password):
-    """Adds a new user to the database with a hashed password."""
-    if get_user(username):
-        return False # User already exists
-
+def add_or_update_user(username, password):
+    """Adds a new user or updates the password if the user already exists."""
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed_password.decode('utf-8')))
+        if get_user(username):
+            # Update password if user exists
+            cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?", (hashed_password.decode('utf-8'), username))
+        else:
+            # Add new user
+            cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed_password.decode('utf-8')))
         conn.commit()
         return True
-    except sqlite3.IntegrityError: # Should be caught by get_user check, but as a safeguard
+    except Exception as e:
+        print(f"Error in add_or_update_user: {e}")  # For logging
         return False
     finally:
         conn.close()
+
 
 def verify_user(username, password):
     """Verifies a user's credentials against the stored hash."""
@@ -81,25 +85,6 @@ def get_user(username):
     user = cursor.fetchone()
     conn.close()
     return user
-
-def update_password(username, new_password):
-    """Updates a user's password."""
-    user = get_user(username)
-    if not user:
-        return False # User not found
-
-    new_hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hashed_password.decode('utf-8'), username))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Error updating password: {e}") # For logging
-        return False
-    finally:
-        conn.close()
 
 def get_setting(key, default=None):
     """Retrieves a setting value by key."""
